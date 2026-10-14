@@ -1,0 +1,117 @@
+// prisma/schema.prisma
+// Accessibility AI Controller — Data Model
+// PostgreSQL + Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ModelStatus {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+}
+
+enum TelemetryLevel {
+  INFO
+  WARNING
+  ERROR
+  FATAL
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  displayName   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  config        UserConfig?
+  telemetryLogs TelemetryLog[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revoked   Boolean  @default(false)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// Personalization parameters for the pointer/AI pipeline.
+model UserConfig {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Pointer mapping
+  mouseSensitivity   Float    @default(1.0)
+  deadZoneRadius     Float    @default(0.02)
+  invertX            Boolean  @default(false)
+  invertY            Boolean  @default(false)
+
+  // 1€ Filter tuning
+  oneEuroMinCutoff   Float    @default(1.0)
+  oneEuroBeta        Float    @default(0.007)
+  oneEuroDCutoff     Float    @default(1.0)
+
+  // Wink / EAR detection
+  earCalibrationSec  Int      @default(3)
+  earThresholdRatio  Float    @default(0.75)
+  winkDebounceMs      Int      @default(300)
+
+  activeModelId      String?
+  activeModel        AIModel? @relation(fields: [activeModelId], references: [id])
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("user_configs")
+}
+
+// OTA-distributed AI model artifacts (MediaPipe task bundles, etc.)
+model AIModel {
+  id          String       @id @default(cuid())
+  name        String
+  version     String
+  checksum    String
+  sizeBytes   Int
+  storageUrl  String
+  status      ModelStatus  @default(DRAFT)
+  releaseNotes String?
+  createdAt   DateTime     @default(now())
+
+  configs     UserConfig[]
+
+  @@unique([name, version])
+  @@map("ai_models")
+}
+
+model TelemetryLog {
+  id        String         @id @default(cuid())
+  userId    String?
+  user      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  level     TelemetryLevel
+  source    String
+  message   String
+  context   Json?
+  createdAt DateTime       @default(now())
+
+  @@index([userId])
+  @@index([level, createdAt])
+  @@map("telemetry_logs")
+}
